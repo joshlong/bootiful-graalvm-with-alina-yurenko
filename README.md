@@ -13,7 +13,7 @@ commnt out the spring boot maven plugin
 ## resources
 introduce some code that reads from a classpath resource:
 
-```
+```java
 
 package com.example.basics;
 
@@ -38,7 +38,7 @@ Add a sample file called `test.xml`
 this wont work! we need to add a config file to help graalvm account for this fun dynamic java like behavior: add `src/main/resources/META-INF/native-image/group/artifact/resource-config.json` and put the following in it: 
 
 
-```
+```json
 {
   "resources": {
     "includes": [
@@ -59,7 +59,8 @@ Quick show of hands: how should we pronounce "JSON"?
 
 
 Run the compile: 
-```
+
+```shell
 ./mvnw  clean native:compile -Pnative    && ./target/basics 
 ```
 
