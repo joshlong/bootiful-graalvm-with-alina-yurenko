@@ -47,6 +47,18 @@
                 </configuration>
             </plugin>
 
+<!--            -->
+
+         <!--   <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <jvmArguments>
+                        -agentlib:native-image-agent=config-output-dir=target/native-image
+                    </jvmArguments>
+                </configuration>
+            </plugin>
+-->
         </plugins>
     </build>
 

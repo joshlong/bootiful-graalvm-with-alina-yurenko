@@ -71,3 +71,52 @@ It works! let's turn to reflection.
 
 clean out the `main` method
 
+add the following code: 
+
+```
+package com.example.basics;
+
+public class BasicsApplication {
+
+    public static void main(String[] args) throws Exception {
+        var clazz = Class.forName("com.example.basics.Album"); // does it blend??
+        System.out.println("got a class? " + (clazz != null ));
+        var instance = (Album) clazz.getDeclaredConstructors()[0]
+                .newInstance("Guardians of the GraalVM, Soundtrack Volume 23");
+        System.out.println("title: " + instance.title());
+    }
+}
+
+record Album(String title) {
+}
+```
+
+Run the compilation again. It'll successfully get the `class` instance, but it'll fail to enumerate the constructors. But don't tell the audience that. What's going wrong? Who knows. the java agent knows. let's plug that in. We could do it ourselves, manually, but it's easier to use Spring Boot to do this. 
+
+Configure it thusly: 
+
+```xml
+<plugin>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-maven-plugin</artifactId>
+    <configuration>
+        <jvmArguments>
+            -agentlib:native-image-agent=config-output-dir=target/native-image
+        </jvmArguments>
+    </configuration>
+</plugin>
+
+```
+
+then run the Java agent like this:
+
+```shell 
+./mvnw -DskipTests clean package spring-boot:run
+```
+
+You'll see `.json` configuration files in `target/native-image`. Analyze the `reflect-config.json`: it worked! the `.json` for the `record Album` is there. Copy and paste it to the `META-INF` folder and then comment out the Spring Boot Maven plugin again. Rebuild the native image. 
+
+
+
+
+

@@ -1,0 +1,7 @@
+[
+  {
+    "name":"com.example.basics.Album",
+    "queryAllDeclaredConstructors":true,
+    "methods":[{"name":"<init>","parameterTypes":["java.lang.String"] }]
+  }
+]
