@@ -116,7 +116,71 @@ then run the Java agent like this:
 
 You'll see `.json` configuration files in `target/native-image`. Analyze the `reflect-config.json`: it worked! the `.json` for the `record Album` is there. Copy and paste it to the `META-INF` folder and then comment out the Spring Boot Maven plugin again. Rebuild the native image. 
 
+It'll work
 
 
+## A more realistic example
 
+Let's restore Spring Boot. Indeed, let's add some dependencies. Go to start.spring.io, generate the `pom.xml` for an actual app consisting of `Web`, `Postgres`, `H2` , `GraalVM Native Image`, and `Data JDBC`. Build the usual `record Customer` example with `schema.sql`, `data.sql`, an `ApplicationRunner`, etc. Compile it and then run the resulting native image. Inspect it's RSS. 
+
+Here's the code: 
+
+```java
+package com.example.basics;
+
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.repository.CrudRepository;
+
+@SpringBootApplication
+public class BasicsApplication {
+
+    @Bean
+    ApplicationRunner runner(CustomerRepository customerRepository) {
+        return args -> customerRepository.findAll().forEach(System.out::println);
+    }
+
+    public static void main(String[] args) throws Exception {
+        SpringApplication.run(BasicsApplication.class, args);
+    }
+}
+
+
+record Customer(@Id Integer id, String name) {
+}
+
+interface CustomerRepository extends CrudRepository<Customer, Integer> {
+}
+```
+
+Add some names to the `data.sql`:
+
+Alina
+Josh
+Sébastien
+Thomas
+Mark
+Stefan
+
+
+Everything works. All good, right? Not so much. not all that glitters is golden! there be dragons. blah blah.
+
+## reachability repo 
+
+theres a question: how did X, on the classpath, get configured. One obfvious thing; the libjrary ships with the `.json` config files. 
+
+what if it doesnt? then what? the [graalvm reachability repository](https://github.com/oracle/graalvm-reachability-metadata). 
+
+Make sure you uncomment the PostgreSQL dependency:
+
+```xml
+<dependency>
+    <groupId>org.postgresql</groupId>
+    <artifactId>postgresql</artifactId>
+    <scope>runtime</scope>
+</dependency>
+```
 

@@ -1,16 +1,28 @@
 package com.example.basics;
 
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.repository.CrudRepository;
+
+@SpringBootApplication
 public class BasicsApplication {
 
+    @Bean
+    ApplicationRunner runner(CustomerRepository customerRepository) {
+        return args -> customerRepository.findAll().forEach(System.out::println);
+    }
+
     public static void main(String[] args) throws Exception {
-        var clazz = Class.forName("com.example.basics.Album"); // does it blend??
-        System.out.println("got a class? " + (clazz != null ));
-        var instance = (Album) clazz.getDeclaredConstructors()[0]
-                .newInstance("Guardians of the GraalVM, Soundtrack Volume 23");
-        System.out.println("title: " + instance.title());
+        SpringApplication.run(BasicsApplication.class, args);
     }
 }
 
 
-record Album(String title) {
+record Customer(@Id Integer id, String name) {
+}
+
+interface CustomerRepository extends CrudRepository<Customer, Integer> {
 }
