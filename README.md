@@ -170,7 +170,7 @@ Everything works. All good, right? Not so much. not all that glitters is golden!
 
 ## reachability repo 
 
-theres a question: how did X, on the classpath, get configured. One obfvious thing; the libjrary ships with the `.json` config files. 
+theres a question: how did X, on the classpath, get configured. One obfvious thing; the libjrary ships with the `.json` config files. H2 does. it's dope like that. 
 
 what if it doesnt? then what? the [graalvm reachability repository](https://github.com/oracle/graalvm-reachability-metadata). 
 
@@ -183,4 +183,90 @@ Make sure you uncomment the PostgreSQL dependency:
     <scope>runtime</scope>
 </dependency>
 ```
+
+if we compile the application again, it _still_ works, even though PostgreSQL doesn't ship with it. What gives? [Enter the GraalVM reachability repository](https://github.com/oracle/graalvm-reachability-metadata)! 
+
+
+## the new AOT engine in Spring Boot 3
+
+What happens when the code youre using in turn uses your code? that is, what happens when youre dealing with a framework and not just a library for whom a static `.json` configuration file is suitable enough? Something needs to provide the configuration, dynamicaly, based on the types on the classpath. Spring is well situated here. It has a new AOT engine. 
+
+Make sure to sort of remove all the stuff beyond `spring-boot-starter`. We don't need Spring Data JDBC, the web support, etc. Comment it all out. We just want core Spring Boot and Spring Framework.
+
+### a quick background thread on functional configuration 
+
+```java
+var context  = new SpringApplicationBuilder()
+                .sources(BasicsApplication.class)
+                .main(BasicsApplication.class)
+                .initializers((ApplicationContextInitializer<GenericApplicationContext>) ac ->
+                        ac.registerBean(ApplicationRunner.class, () -> args1 -> System.out.println("hello functional Spring!")))
+                .run(args);
+```
+
+wouldn't it be nice if we could automatically derive functional bean definitions from reflection-heavy Java `@Configuration` style bean definnitions? We can thanks to Spring Boot 3s new AOT engine, which extends the bean graph to compile time.
+
+### a quick background thread on the `BeanFactory`
+
+spring doesn't care where you source the configuration from: it could come from `@Configuration`, component-scanning (`@Service`, `@Controller` , etc), XML, functional config, etc. 
+
+spring has a lifecycle 
+
+beans first exist in a primordial soup of `BeanDefinitions`
+
+you can interact with beans at this granularity early on in the application context lifecycle as the application starts up (NOT new). 
+
+```java
+class MyBeanFactoryBeanPostProcessor implements BeanFactoryPostProcessor {
+
+    @Override
+    public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
+        for (var beanName : beanFactory.getBeanDefinitionNames()) {
+            System.out.println("there is a bean called ['" + beanName + "']");
+            var beanDefinition = beanFactory.getBeanDefinition(beanName);
+            System.out.println("\tthe bean class name is " + beanDefinition.getBeanClassName());
+        }
+    }
+}
+
+```
+
+Notice the great pains we went to avoid doing anything to eagerly initialize the beans; it's too early! 
+
+But, even at this early stage we have enough infromation to understand how the objects are wired together. And we can use that information to analzye the state of the application context. 
+
+What if we had access to this information even earlier, at compile time? that's the core conceit of the new Spring Framework 6 AOT (ahead-of-time) engine. We don't get live-fire objects, just `BeanDefinition`s, but it's enough. We can inspect the `BeanDefinition`s and then do code-generation to write out the state of the context. 
+
+See for example the `target/spring-aot/main/sources/com/example/basics/BasicsApplication__BeanFactoryRegistrations.java`. 
+
+## contributing to the `BeanFactory` AOT meta model at compile time 
+
+we have seen that the AOT engine generates `.json` config files and even `.java` code, such as with the functional redefinition of the beans. you can contribute to this compile time code generation. for the simplest case, reflection, there's even a convenient annotation. Revisiting the earlier example, you could use:
+
+```java
+@RegisterReflectionForBinding(BasicsApplication.Album.class)
+```
+
+What about the resource example from earlier?  Reintroduce the `test.xml` scenario as an `ApplicationRunner`. It'll run fine on the JVM, but fail as we've deleted the `resource-config.json`. We could add it back, but it's also possible to use the Spring AOT component model. 
+
+Show the simple `RuntimeHintsRegistrar` that defines a hint for the `Resource`.
+
+```java
+@ImportRuntimeHints(BasicsApplication.MyHints.class)
+```
+
+And then show the actual implementation itself: 
+
+```java
+
+    static class MyHints implements RuntimeHintsRegistrar {
+
+        @Override
+        public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
+            hints.resources().registerResource(new ClassPathResource("/test.xml"));
+        }
+    }
+
+```
+
 
