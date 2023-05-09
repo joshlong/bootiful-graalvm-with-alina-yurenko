@@ -6,7 +6,7 @@ create a new start.spring.io project with graalvm, MAVEN, and reactive web
 
 remove the Spring Boot annotations and gut the main method 
 
-commnt out the spring boot maven plugin 
+comment out the spring boot maven plugin 
 
 
 
@@ -64,7 +64,7 @@ Run the compile:
 ./mvnw  clean native:compile -Pnative    && ./target/basics 
 ```
 
-It works! lets turn to reflection. 
+It works! let's turn to reflection. 
 
 
 ## reflection 
