@@ -193,6 +193,20 @@ What happens when the code youre using in turn uses your code? that is, what hap
 
 Make sure to sort of remove all the stuff beyond `spring-boot-starter`. We don't need Spring Data JDBC, the web support, etc. Comment it all out. We just want core Spring Boot and Spring Framework.
 
+Also, there are things you can do to optimize your build. try this:
+
+```xml
+<plugin>
+    <groupId>org.graalvm.buildtools</groupId>
+    <artifactId>native-maven-plugin</artifactId>
+    <configuration>
+        <buildArgs>
+            <buildArg>-Ob</buildArg>
+        </buildArgs>
+    </configuration>
+</plugin>
+```
+
 ### a quick background thread on functional configuration 
 
 ```java
