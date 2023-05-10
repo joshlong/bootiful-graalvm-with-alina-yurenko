@@ -4,8 +4,11 @@ import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.aot.BeanRegistrationAotContribution;
+import org.springframework.beans.factory.aot.BeanRegistrationAotProcessor;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.support.RegisteredBean;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
@@ -13,13 +16,15 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ImportRuntimeHints;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.javapoet.MethodSpec;
 import org.springframework.stereotype.Component;
 import org.springframework.util.FileCopyUtils;
 
+import javax.lang.model.element.Modifier;
 import java.io.InputStreamReader;
 
 @SpringBootApplication
-@ImportRuntimeHints(BasicsApplication.MyHints.class)
+@ImportRuntimeHints(MyRuntimeHintsRegistrar.class)
 @RegisterReflectionForBinding(Album.class)
 public class BasicsApplication {
 
@@ -62,17 +67,56 @@ public class BasicsApplication {
         return new MyBeanFactoryBeanPostProcessor();
     }
 
-    static class MyHints implements RuntimeHintsRegistrar {
 
-        @Override
-        public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
-            System.out.println("take a hint!");
-            hints.resources().registerResource(new ClassPathResource("/test.xml"));
-        }
+    @Bean
+    static MyBeanRegistrationAotProcessor myBeanRegistrationAotProcessor() {
+        return new MyBeanRegistrationAotProcessor();
     }
+}
+
+
+class MyBeanRegistrationAotProcessor implements BeanRegistrationAotProcessor {
+
+    @Override
+    public BeanRegistrationAotContribution processAheadOfTime(RegisteredBean registeredBean) {
+
+        var beanClass = registeredBean.getBeanClass();
+
+        System.out.println("going to analyze the RegisteredBean called [" +
+                           registeredBean.getBeanName() +
+                           "] with class [" + beanClass +
+                           "]");
+
+        return (generationContext, beanRegistrationCode) -> {
+            var hints = generationContext.getRuntimeHints();
+            hints.reflection().registerType(beanClass);
+
+            MethodSpec customMethod = MethodSpec.methodBuilder("myCustomMethod")
+                    .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                    .returns(void.class)
+                    .addParameter(String[].class, "args")
+                    .addStatement("$T.out.println($S)", System.class, "Hello, JavaPoet!")
+                    .build();
+
+            generationContext.getGeneratedClasses().addForFeatureComponent(
+                    "test", BasicsApplication.class,
+                    builder -> builder.addMethod(customMethod));
+
+        };
+    }
+
 
 }
 
+
+class MyRuntimeHintsRegistrar implements RuntimeHintsRegistrar {
+
+    @Override
+    public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
+        System.out.println("take a hint!");
+        hints.resources().registerResource(new ClassPathResource("/test.xml"));
+    }
+}
 
 class MyBeanFactoryBeanPostProcessor implements BeanFactoryPostProcessor {
 
@@ -98,7 +142,7 @@ class MyBean implements ApplicationRunner {
 record Album(String title) {
 }
 
-record Customer( Integer id, String name) {
+record Customer(Integer id, String name) {
 }
 //
 //interface CustomerRepository extends CrudRepository<Customer, Integer> {

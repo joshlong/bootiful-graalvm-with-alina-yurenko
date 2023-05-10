@@ -207,6 +207,7 @@ Also, there are things you can do to optimize your build. try this:
 </plugin>
 ```
 
+
 ### a quick background thread on functional configuration 
 
 ```java
@@ -253,6 +254,11 @@ What if we had access to this information even earlier, at compile time? that's 
 
 See for example the `target/spring-aot/main/sources/com/example/basics/BasicsApplication__BeanFactoryRegistrations.java`. 
 
+
+## about the build itself 
+
+From here on down, we're using the Spring Boot Gradle and Maven build plugins. When we talk about compiling, we're actually talking about two things that happen at the same time: the Spring Boot build plugins use `javac` to compile your `.java` into `.class` files. The `.class` files are then run, and a `BeanFactory` populated with `BeanDefinitions` is made available for inspection. Code can inspect the `BeanDefinition`s and emit one or both of Java source code and GraalVM native image `.json` configuration files. That new Java source code, and the new GraalVM config files, along with your source code, is then passed into the GraalVM native image compiler. 
+
 ## contributing to the `BeanFactory` AOT meta model at compile time 
 
 we have seen that the AOT engine generates `.json` config files and even `.java` code, such as with the functional redefinition of the beans. you can contribute to this compile time code generation. for the simplest case, reflection, there's even a convenient annotation. Revisiting the earlier example, you could use:
@@ -282,5 +288,10 @@ And then show the actual implementation itself:
     }
 
 ```
+
+This works but theres no context, no beans. what if you want to analyze the beans? to make decisions based on the presence of annotations, interfaces, methods, etc? You need something like the `BeanFactoryPostProcessor` from earlier. Enter the `RegisteredBeanAotProcessor`.
+
+
+
 
 
