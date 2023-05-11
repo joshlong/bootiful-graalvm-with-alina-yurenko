@@ -50,6 +50,22 @@ Stefan
 Everything works. All good, right? Not so much. not all that glitters is golden! there be dragons. blah blah.
 
 
+## optimizing builds to go a bit faster for development time 
+
+Also, there are things you can do to optimize your build. try this:
+
+```xml
+<plugin>
+    <groupId>org.graalvm.buildtools</groupId>
+    <artifactId>native-maven-plugin</artifactId>
+    <configuration>
+        <buildArgs>
+            <buildArg>-Ob</buildArg>
+        </buildArgs>
+    </configuration>
+</plugin>
+```
+
 
 ## back to basics 
 
@@ -102,6 +118,7 @@ this wont work! we need to add a config file to help graalvm account for this fu
 
 ```
 
+Very importantly: for some reason the mechanism _hates_ it when you name the folder I named `artifact` the same as the `artifactId` of your `pom.xml`. Why? Don't know. You are not expected to understand this.
 
 Quick show of hands: how should we pronounce "JSON"? 
 
@@ -142,7 +159,7 @@ record Album(String title) {
 }
 ```
 
-Run the compilation again. It'll successfully get the `class` instance, but it'll fail to enumerate the constructors. But don't tell the audience that. What's going wrong? Who knows. the java agent knows. let's plug that in. We could do it ourselves, manually, but it's easier to use Spring Boot to do this. 
+Run the compilation again. It'll successfully get the `class` instance, but it'll fail to enumerate the constructors. GraalVM is smart enough to detect _some_ cases of reflection, [as described in this document](https://www.graalvm.org/22.0/reference-manual/native-image/Reflection/). But don't tell the audience that. What's going wrong? Who knows. The java agent knows. let's plug that in. We could do it ourselves, manually, but it's easier to use Spring Boot to do this. 
 
 Configure it thusly: 
 
@@ -173,23 +190,9 @@ It'll work
  
 ## reachability repo 
 
-theres a question: how did X, on the classpath, get configured. One obfvious thing; the libjrary ships with the `.json` config files. H2 does. it's dope like that. 
+theres a question: how did X, on the classpath, get configured. One obvious thing; the libjrary ships with the `.json` config files. H2 does. it's dope like that. 
 
 what if it doesnt? then what? the [graalvm reachability repository](https://github.com/oracle/graalvm-reachability-metadata). 
-
-Make sure you uncomment the PostgreSQL dependency:
-
-```xml
-<dependency>
-    <groupId>org.postgresql</groupId>
-    <artifactId>postgresql</artifactId>
-    <scope>runtime</scope>
-</dependency>
-```
-
-if we compile the application again, it _still_ works, even though PostgreSQL doesn't ship with it. What gives? [Enter the GraalVM reachability repository](https://github.com/oracle/graalvm-reachability-metadata)! 
-
-
 
 
 ## the new AOT engine in Spring Boot 3
@@ -198,23 +201,48 @@ if we compile the application again, it _still_ works, even though PostgreSQL do
 
 What happens when the code you're using in turn uses your code? that is, what happens when youre dealing with a framework and not just a library for whom a static `.json` configuration file is suitable enough? Something needs to provide the configuration, dynamicaly, based on the types on the classpath. Spring is well situated here. It has a new AOT engine. 
 
-Make sure to sort of remove all the stuff beyond `spring-boot-starter`. We don't need Spring Data JDBC, the web support, etc. Comment it all out. We just want core Spring Boot and Spring Framework.
 
-Also, there are things you can do to optimize your build. try this:
+## the common case of reflection
 
-```xml
-<plugin>
-    <groupId>org.graalvm.buildtools</groupId>
-    <artifactId>native-maven-plugin</artifactId>
-    <configuration>
-        <buildArgs>
-            <buildArg>-Ob</buildArg>
-        </buildArgs>
-    </configuration>
-</plugin>
+we have seen that the AOT engine generates `.json` config files and even `.java` code, such as with the functional redefinition of the beans. you can contribute to this compile time code generation. for the simplest case, reflection, there's even a convenient annotation. Revisiting the earlier example, you could use:
+
+```java
+@RegisterReflectionForBinding( Album.class)
 ```
 
-### a quick tangent on the lifecycle of  a Spring application 
+
+
+## Hints, a bit more control 
+
+
+
+What about the resource example from earlier?  Reintroduce the `test.xml` scenario as an `ApplicationRunner`. It'll run fine on the JVM, but fail as we've deleted the `resource-config.json`. We could add it back, but it's also possible to use the Spring AOT component model. 
+
+Show the simple `RuntimeHintsRegistrar` that defines a hint for the `Resource`.
+
+```java
+@ImportRuntimeHints(BasicsApplication.MyHints.class)
+```
+
+And then show the actual implementation itself: 
+
+```java
+
+    static class MyHints implements RuntimeHintsRegistrar {
+
+        @Override
+        public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
+            hints.resources().registerResource(new ClassPathResource("hello"));
+            hints.reflection().registerType(Album.class, MemberCategory.values());
+        }
+    }
+
+```
+
+
+## lets talk about beans 
+
+### a quick tangent on the lifecycle of a Spring application and its beans 
 
 
 Before Spring Boot 3:
@@ -226,25 +254,14 @@ Before Spring Boot 3:
 After Spring Boot 3:
 
 **COMPILE**
+
 `BeanFactoryInitializationAotProcessor` => `.json`, or `.java` code
+`BeanRegistrationAotProcessor` => `.json`, or `.java`
 
 **RUNTIME**
 `BeanFactoryPostProcessor` => `BeanDefinition`s
 `BeanPostProcessor` => beans
 
-
-### a quick background thread on functional configuration 
-
-```java
-var context  = new SpringApplicationBuilder()
-                .sources(BasicsApplication.class)
-                .main(BasicsApplication.class)
-                .initializers((ApplicationContextInitializer<GenericApplicationContext>) ac ->
-                        ac.registerBean(ApplicationRunner.class, () -> args1 -> System.out.println("hello functional Spring!")))
-                .run(args);
-```
-
-wouldn't it be nice if we could automatically derive functional bean definitions from reflection-heavy Java `@Configuration` style bean definnitions? We can thanks to Spring Boot 3s new AOT engine, which extends the bean graph to compile time.
 
 ### a quick background thread on the `BeanFactory`
 
@@ -271,6 +288,7 @@ class MyBeanFactoryBeanPostProcessor implements BeanFactoryPostProcessor {
 
 ```
 
+
 Notice the great pains we went to avoid doing anything to eagerly initialize the beans; it's too early! 
 
 But, even at this early stage we have enough information to understand how the objects are wired together. And we can use that information to analyze the state of the application context. 
@@ -280,44 +298,87 @@ What if we had access to this information even earlier, at compile time? that's 
 See for example the `target/spring-aot/main/sources/com/example/basics/BasicsApplication__BeanFactoryRegistrations.java`. 
 
 
-## about the build itself 
-
-From here on down, we're using the Spring Boot Gradle and Maven build plugins. When we talk about compiling, we're actually talking about two things that happen at the same time: the Spring Boot build plugins use `javac` to compile your `.java` into `.class` files. The `.class` files are then run, and a `BeanFactory` populated with `BeanDefinitions` is made available for inspection. Code can inspect the `BeanDefinition`s and emit one or both of Java source code and GraalVM native image `.json` configuration files. That new Java source code, and the new GraalVM config files, along with your source code, is then passed into the GraalVM native image compiler. 
-
-## contributing to the `BeanFactory` AOT meta model at compile time 
-
-we have seen that the AOT engine generates `.json` config files and even `.java` code, such as with the functional redefinition of the beans. you can contribute to this compile time code generation. for the simplest case, reflection, there's even a convenient annotation. Revisiting the earlier example, you could use:
+### a quick background thread on functional configuration 
 
 ```java
-@RegisterReflectionForBinding(BasicsApplication.Album.class)
+var context  = new SpringApplicationBuilder()
+        .sources(BasicsApplication.class)
+        .main(BasicsApplication.class)
+        .initializers((ApplicationContextInitializer<GenericApplicationContext>) ac ->
+                ac.registerBean(ApplicationRunner.class, () -> args1 -> System.out.println("hello functional Spring!")))
+        .run(args);
 ```
 
-What about the resource example from earlier?  Reintroduce the `test.xml` scenario as an `ApplicationRunner`. It'll run fine on the JVM, but fail as we've deleted the `resource-config.json`. We could add it back, but it's also possible to use the Spring AOT component model. 
+wouldn't it be nice if we could automatically derive functional bean definitions from reflection-heavy Java `@Configuration` style bean definnitions? We can thanks to Spring Boot 3s new AOT engine, which extends the bean graph to compile time. We do that for you, already! And were able to do this because of AOT processor beans that get run at compile time. 
 
-Show the simple `RuntimeHintsRegistrar` that defines a hint for the `Resource`.
+## 
+
+This works but there's no context, no beans. what if you want to analyze the beans? to make decisions based on the presence of annotations, interfaces, methods, etc? You need something like the `BeanFactoryPostProcessor` from earlier. Enter the `BeanRegistrationAotProcessor`.
+
+
+this lets you work with indifivudsal beans in the context. if you prefer to analyze all or many of the beans in the AC theres a BeanFactorynitializationAotProcessor, too. 
+
+One of the things thats importatn to higlight here is that these are just Spring components and can live in Java configuraiton classes that are packed up on the classpath. So, imagine you have a library for your organization that does dynamic things and needs to furnish GraalVM configuration, somebody would just need to addd  your library containing these AOT components and it'lll automatically get invoked and involved when there's a graalvm native image compilation. Users wouldn't even need to know about the extra support, if any, required for the graalvm compilation to work.
+
+YOU. ARE. NOT. EXPECTED. TO. UNDERSTAND. THIS.
+
+
+## Code Generation with Java
+
+
 
 ```java
-@ImportRuntimeHints(BasicsApplication.MyHints.class)
-```
+@Service
+class SimpleService {
 
-And then show the actual implementation itself: 
+    void provideOrigin(Instant instant, File file) {
+        System.out.println("compiled at " + instant);
+        System.out.println("in file " + file);
+    }
+}
 
-```java
 
-    static class MyHints implements RuntimeHintsRegistrar {
+class SimpleServiceAotProcessor implements BeanRegistrationAotProcessor {
 
-        @Override
-        public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
-            hints.resources().registerResource(new ClassPathResource("/test.xml"));
-            hints.reflection().registerType(Album.class, MemberCategory.values());
-        }
+    @Override
+    public BeanRegistrationAotContribution processAheadOfTime(RegisteredBean registeredBean) {
+
+        var clzz = SimpleService.class;
+
+        if (!clzz.isAssignableFrom(registeredBean.getBeanClass()))
+            return null;
+
+        return (ctx, code) -> {
+
+            var generatedClasses = ctx.getGeneratedClasses();
+
+            var generatedClass = generatedClasses.getOrAddForFeatureComponent(
+                    clzz.getSimpleName() + "Feature", clzz,
+                    b -> b.addModifiers(Modifier.PUBLIC));
+
+            var generatedMethod = generatedClass.getMethods().add("codeGenerationFtw", build -> {
+
+                build.addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                        .addParameter(RegisteredBean.class, "registeredBean") //
+                        .addParameter(clzz, "inputBean")//
+                        .returns(clzz)
+                        .addCode(String.format("""
+                                inputBean.provideOrigin(
+                                    java.time.Instant.ofEpochMilli(
+                                    %s
+                                    )  , 
+                                    new java.io.File ("%s")     
+                                 );
+                                 return  inputBean; 
+                                 
+                                 """, System.currentTimeMillis() + "L", new File(".").getAbsolutePath()));
+            });
+            var methodReference = generatedMethod.toMethodReference();
+            code.addInstancePostProcessor(methodReference);
+        };
     }
 
-```
-
-This works but there's no context, no beans. what if you want to analyze the beans? to make decisions based on the presence of annotations, interfaces, methods, etc? You need something like the `BeanFactoryPostProcessor` from earlier. Enter the `RegisteredBeanAotProcessor`.
-
-
+}```
 
 
 

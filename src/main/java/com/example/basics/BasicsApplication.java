@@ -1,25 +1,19 @@
 package com.example.basics;
 
+import org.springframework.aot.generate.GenerationContext;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
-import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
-import org.springframework.beans.BeansException;
-import org.springframework.beans.factory.aot.BeanFactoryInitializationAotContribution;
-import org.springframework.beans.factory.aot.BeanFactoryInitializationAotProcessor;
 import org.springframework.beans.factory.aot.BeanRegistrationAotContribution;
 import org.springframework.beans.factory.aot.BeanRegistrationAotProcessor;
-import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
-import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.aot.BeanRegistrationCode;
 import org.springframework.beans.factory.support.RegisteredBean;
-import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ImportRuntimeHints;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 import org.springframework.util.FileCopyUtils;
 
@@ -28,16 +22,20 @@ import java.io.File;
 import java.io.InputStreamReader;
 import java.time.Instant;
 
+@ImportRuntimeHints(Hints.class)
 @SpringBootApplication
-@ImportRuntimeHints(MyRuntimeHintsRegistrar.class)
-@RegisterReflectionForBinding(Album.class)
+//@RegisterReflectionForBinding (Album.class)
 public class BasicsApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(BasicsApplication.class, args);
+    }
 
 
     @Bean
     ApplicationRunner resources() {
         return args -> {
-            var xml = new ClassPathResource("test.xml");
+            var xml = new ClassPathResource("hello");
             var str = FileCopyUtils.copyToString(new InputStreamReader(xml.getInputStream()));
             System.out.println("str: " + str);
         };
@@ -46,32 +44,16 @@ public class BasicsApplication {
     @Bean
     ApplicationRunner reflection() {
         return args -> {
-            var clazz = Class.forName("com.example.basics.Album"); // does it blend??
+            var clazz = Class.forName("bootiful.aot.Album"); // does it blend??
             System.out.println("got a class? " + (clazz != null));
             var instance = (Album) clazz.getDeclaredConstructors()[0]
                     .newInstance("Guardians of the GraalVM, Soundtrack Volume 23");
             System.out.println("title: " + instance.title());
-
         };
     }
 
-    public static void main(String[] args) throws Exception {
-        SpringApplication.run(BasicsApplication.class, args);
-         /* new SpringApplicationBuilder()
-                .sources(BasicsApplication.class)
-                .main(BasicsApplication.class)
-                .initializers((ApplicationContextInitializer<GenericApplicationContext>) ac ->
-                        ac.registerBean(ApplicationRunner.class, () -> args1 -> System.out.println("hello functional Spring!")))
-                .run(args);*/
-    }
-
     @Bean
-    static MyBeanFactoryBeanPostProcessor myBeanFactoryBeanPostProcessor() {
-        return new MyBeanFactoryBeanPostProcessor();
-    }
-
-    @Bean
-    static SimpleServiceAotProcessor aotProcessor() {
+    static SimpleServiceAotProcessor simpleServiceAotProcessor() {
         return new SimpleServiceAotProcessor();
     }
 
@@ -79,81 +61,36 @@ public class BasicsApplication {
     static MyBeanRegistrationAotProcessor myBeanRegistrationAotProcessor() {
         return new MyBeanRegistrationAotProcessor();
     }
-
-    @Bean
-    static MyBeanFactoryInitializationAotProcessor myBeanFactoryInitializationAotProcessor() {
-        return new MyBeanFactoryInitializationAotProcessor();
-    }
 }
-
-
-class MyBeanFactoryInitializationAotProcessor implements BeanFactoryInitializationAotProcessor {
-
-    @Override
-    public BeanFactoryInitializationAotContribution processAheadOfTime(
-            ConfigurableListableBeanFactory beanFactory) {
-
-        System.out.println("i can register beans at compile time");
-
-        return null;
-    }
-}
-
 
 class MyBeanRegistrationAotProcessor implements BeanRegistrationAotProcessor {
 
     @Override
     public BeanRegistrationAotContribution processAheadOfTime(RegisteredBean registeredBean) {
 
-        var beanClass = registeredBean.getBeanClass();
-
-        System.out.println("going to analyze the RegisteredBean called [" +
-                           registeredBean.getBeanName() +
-                           "] with class [" + beanClass +
-                           "]");
-
+        if (registeredBean.getBeanName().equals("joshsSpecialBean")) {
+            return new BeanRegistrationAotContribution() {
+                @Override
+                public void applyTo(GenerationContext generationContext, BeanRegistrationCode beanRegistrationCode) {
+                    generationContext.getRuntimeHints()
+                            .reflection().registerType(Album.class, MemberCategory.values());
+                }
+            };
+        }
         return null;
     }
-
-
 }
 
-
-class MyRuntimeHintsRegistrar implements RuntimeHintsRegistrar {
+class Hints implements RuntimeHintsRegistrar {
 
     @Override
     public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
-        System.out.println("take a hint!");
-        hints.resources().registerResource(new ClassPathResource("/test.xml"));
         hints.reflection().registerType(Album.class, MemberCategory.values());
-    }
-}
-
-class MyBeanFactoryBeanPostProcessor implements BeanFactoryPostProcessor {
-
-    @Override
-    public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
-        for (var beanName : beanFactory.getBeanDefinitionNames()) {
-            System.out.println("there is a bean called ['" + beanName + "']");
-            var beanDefinition = beanFactory.getBeanDefinition(beanName);
-            System.out.println("\tthe bean class name is " + beanDefinition.getBeanClassName());
-        }
-    }
-}
-
-@Component
-class MyBean implements ApplicationRunner {
-
-    @Override
-    public void run(ApplicationArguments args) throws Exception {
-        System.out.println("hello MyBean");
+        hints.resources().registerResource(new ClassPathResource("/hello"));
     }
 }
 
 record Album(String title) {
-}
-
-record Customer(Integer id, String name) {
 }
 
 
