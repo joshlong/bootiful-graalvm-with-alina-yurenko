@@ -1,9 +1,12 @@
 package com.example.basics;
 
+import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.aot.BeanFactoryInitializationAotContribution;
+import org.springframework.beans.factory.aot.BeanFactoryInitializationAotProcessor;
 import org.springframework.beans.factory.aot.BeanRegistrationAotContribution;
 import org.springframework.beans.factory.aot.BeanRegistrationAotProcessor;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
@@ -16,12 +19,14 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ImportRuntimeHints;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.javapoet.MethodSpec;
 import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 import org.springframework.util.FileCopyUtils;
 
 import javax.lang.model.element.Modifier;
+import java.io.File;
 import java.io.InputStreamReader;
+import java.time.Instant;
 
 @SpringBootApplication
 @ImportRuntimeHints(MyRuntimeHintsRegistrar.class)
@@ -38,7 +43,6 @@ public class BasicsApplication {
         };
     }
 
-
     @Bean
     ApplicationRunner reflection() {
         return args -> {
@@ -52,9 +56,8 @@ public class BasicsApplication {
     }
 
     public static void main(String[] args) throws Exception {
-
         SpringApplication.run(BasicsApplication.class, args);
-        /* new SpringApplicationBuilder()
+         /* new SpringApplicationBuilder()
                 .sources(BasicsApplication.class)
                 .main(BasicsApplication.class)
                 .initializers((ApplicationContextInitializer<GenericApplicationContext>) ac ->
@@ -67,10 +70,32 @@ public class BasicsApplication {
         return new MyBeanFactoryBeanPostProcessor();
     }
 
+    @Bean
+    static SimpleServiceAotProcessor aotProcessor() {
+        return new SimpleServiceAotProcessor();
+    }
 
     @Bean
     static MyBeanRegistrationAotProcessor myBeanRegistrationAotProcessor() {
         return new MyBeanRegistrationAotProcessor();
+    }
+
+    @Bean
+    static MyBeanFactoryInitializationAotProcessor myBeanFactoryInitializationAotProcessor() {
+        return new MyBeanFactoryInitializationAotProcessor();
+    }
+}
+
+
+class MyBeanFactoryInitializationAotProcessor implements BeanFactoryInitializationAotProcessor {
+
+    @Override
+    public BeanFactoryInitializationAotContribution processAheadOfTime(
+            ConfigurableListableBeanFactory beanFactory) {
+
+        System.out.println("i can register beans at compile time");
+
+        return null;
     }
 }
 
@@ -87,22 +112,7 @@ class MyBeanRegistrationAotProcessor implements BeanRegistrationAotProcessor {
                            "] with class [" + beanClass +
                            "]");
 
-        return (generationContext, beanRegistrationCode) -> {
-            var hints = generationContext.getRuntimeHints();
-            hints.reflection().registerType(beanClass);
-
-            MethodSpec customMethod = MethodSpec.methodBuilder("myCustomMethod")
-                    .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-                    .returns(void.class)
-                    .addParameter(String[].class, "args")
-                    .addStatement("$T.out.println($S)", System.class, "Hello, JavaPoet!")
-                    .build();
-
-            generationContext.getGeneratedClasses().addForFeatureComponent(
-                    "test", BasicsApplication.class,
-                    builder -> builder.addMethod(customMethod));
-
-        };
+        return null;
     }
 
 
@@ -115,6 +125,7 @@ class MyRuntimeHintsRegistrar implements RuntimeHintsRegistrar {
     public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
         System.out.println("take a hint!");
         hints.resources().registerResource(new ClassPathResource("/test.xml"));
+        hints.reflection().registerType(Album.class, MemberCategory.values());
     }
 }
 
@@ -144,6 +155,56 @@ record Album(String title) {
 
 record Customer(Integer id, String name) {
 }
-//
-//interface CustomerRepository extends CrudRepository<Customer, Integer> {
-//}
+
+
+@Service
+class SimpleService {
+
+    void provideOrigin(Instant instant, File file) {
+        System.out.println("compiled at " + instant);
+        System.out.println("in file " + file);
+    }
+}
+
+
+class SimpleServiceAotProcessor implements BeanRegistrationAotProcessor {
+
+    @Override
+    public BeanRegistrationAotContribution processAheadOfTime(RegisteredBean registeredBean) {
+
+        var clzz = SimpleService.class;
+
+        if (!clzz.isAssignableFrom(registeredBean.getBeanClass()))
+            return null;
+
+        return (ctx, code) -> {
+
+            var generatedClasses = ctx.getGeneratedClasses();
+
+            var generatedClass = generatedClasses.getOrAddForFeatureComponent(
+                    clzz.getSimpleName() + "Feature", clzz,
+                    b -> b.addModifiers(Modifier.PUBLIC));
+
+            var generatedMethod = generatedClass.getMethods().add("codeGenerationFtw", build -> {
+
+                build.addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                        .addParameter(RegisteredBean.class, "registeredBean") //
+                        .addParameter(clzz, "inputBean")//
+                        .returns(clzz)
+                        .addCode(String.format("""
+                                inputBean.provideOrigin(
+                                    java.time.Instant.ofEpochMilli(
+                                    %s
+                                    )  , 
+                                    new java.io.File ("%s")     
+                                 );
+                                 return  inputBean; 
+                                 
+                                 """, System.currentTimeMillis() + "L", new File(".").getAbsolutePath()));
+            });
+            var methodReference = generatedMethod.toMethodReference();
+            code.addInstancePostProcessor(methodReference);
+        };
+    }
+
+}

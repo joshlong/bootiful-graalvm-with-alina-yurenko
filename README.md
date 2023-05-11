@@ -1,5 +1,56 @@
 # graalvm or bust 
 
+## the happy path for 80% of your usecases: it just works! (TM)
+
+Let's restore Spring Boot. Indeed, let's add some dependencies. Go to start.spring.io, generate the `pom.xml` for an actual app consisting of `Web`, `Postgres`, `H2` , `GraalVM Native Image`, and `Data JDBC`. Build the usual `record Customer` example with `schema.sql`, `data.sql`, an `ApplicationRunner`, etc. Compile it and then run the resulting native image. Inspect it's RSS.
+
+Here's the code:
+
+```java
+package com.example.basics;
+
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.repository.CrudRepository;
+
+@SpringBootApplication
+public class BasicsApplication {
+
+    @Bean
+    ApplicationRunner runner(CustomerRepository customerRepository) {
+        return args -> customerRepository.findAll().forEach(System.out::println);
+    }
+
+    public static void main(String[] args) throws Exception {
+        SpringApplication.run(BasicsApplication.class, args);
+    }
+}
+
+
+record Customer(@Id Integer id, String name) {
+}
+
+interface CustomerRepository extends CrudRepository<Customer, Integer> {
+}
+```
+
+Add some names to the `data.sql`:
+
+Alina
+Josh
+Sébastien
+Thomas
+Mark
+Stefan
+
+
+Everything works. All good, right? Not so much. not all that glitters is golden! there be dragons. blah blah.
+
+
+
 ## back to basics 
 
 create a new start.spring.io project with graalvm, MAVEN, and reactive web 
@@ -119,55 +170,7 @@ You'll see `.json` configuration files in `target/native-image`. Analyze the `re
 It'll work
 
 
-## A more realistic example
-
-Let's restore Spring Boot. Indeed, let's add some dependencies. Go to start.spring.io, generate the `pom.xml` for an actual app consisting of `Web`, `Postgres`, `H2` , `GraalVM Native Image`, and `Data JDBC`. Build the usual `record Customer` example with `schema.sql`, `data.sql`, an `ApplicationRunner`, etc. Compile it and then run the resulting native image. Inspect it's RSS. 
-
-Here's the code: 
-
-```java
-package com.example.basics;
-
-import org.springframework.boot.ApplicationRunner;
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.context.annotation.Bean;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.repository.CrudRepository;
-
-@SpringBootApplication
-public class BasicsApplication {
-
-    @Bean
-    ApplicationRunner runner(CustomerRepository customerRepository) {
-        return args -> customerRepository.findAll().forEach(System.out::println);
-    }
-
-    public static void main(String[] args) throws Exception {
-        SpringApplication.run(BasicsApplication.class, args);
-    }
-}
-
-
-record Customer(@Id Integer id, String name) {
-}
-
-interface CustomerRepository extends CrudRepository<Customer, Integer> {
-}
-```
-
-Add some names to the `data.sql`:
-
-Alina
-Josh
-Sébastien
-Thomas
-Mark
-Stefan
-
-
-Everything works. All good, right? Not so much. not all that glitters is golden! there be dragons. blah blah.
-
+ 
 ## reachability repo 
 
 theres a question: how did X, on the classpath, get configured. One obfvious thing; the libjrary ships with the `.json` config files. H2 does. it's dope like that. 
@@ -187,9 +190,13 @@ Make sure you uncomment the PostgreSQL dependency:
 if we compile the application again, it _still_ works, even though PostgreSQL doesn't ship with it. What gives? [Enter the GraalVM reachability repository](https://github.com/oracle/graalvm-reachability-metadata)! 
 
 
+
+
 ## the new AOT engine in Spring Boot 3
 
-What happens when the code youre using in turn uses your code? that is, what happens when youre dealing with a framework and not just a library for whom a static `.json` configuration file is suitable enough? Something needs to provide the configuration, dynamicaly, based on the types on the classpath. Spring is well situated here. It has a new AOT engine. 
+
+
+What happens when the code you're using in turn uses your code? that is, what happens when youre dealing with a framework and not just a library for whom a static `.json` configuration file is suitable enough? Something needs to provide the configuration, dynamicaly, based on the types on the classpath. Spring is well situated here. It has a new AOT engine. 
 
 Make sure to sort of remove all the stuff beyond `spring-boot-starter`. We don't need Spring Data JDBC, the web support, etc. Comment it all out. We just want core Spring Boot and Spring Framework.
 
@@ -206,6 +213,24 @@ Also, there are things you can do to optimize your build. try this:
     </configuration>
 </plugin>
 ```
+
+### a quick tangent on the lifecycle of  a Spring application 
+
+
+Before Spring Boot 3:
+
+**RUNTIME**
+`BeanFactoryPostProcessor` => `BeanDefinition`s
+`BeanPostProcessor` => beans 
+
+After Spring Boot 3:
+
+**COMPILE**
+`BeanFactoryInitializationAotProcessor` => `.json`, or `.java` code
+
+**RUNTIME**
+`BeanFactoryPostProcessor` => `BeanDefinition`s
+`BeanPostProcessor` => beans
 
 
 ### a quick background thread on functional configuration 
@@ -248,7 +273,7 @@ class MyBeanFactoryBeanPostProcessor implements BeanFactoryPostProcessor {
 
 Notice the great pains we went to avoid doing anything to eagerly initialize the beans; it's too early! 
 
-But, even at this early stage we have enough infromation to understand how the objects are wired together. And we can use that information to analzye the state of the application context. 
+But, even at this early stage we have enough information to understand how the objects are wired together. And we can use that information to analyze the state of the application context. 
 
 What if we had access to this information even earlier, at compile time? that's the core conceit of the new Spring Framework 6 AOT (ahead-of-time) engine. We don't get live-fire objects, just `BeanDefinition`s, but it's enough. We can inspect the `BeanDefinition`s and then do code-generation to write out the state of the context. 
 
@@ -284,12 +309,13 @@ And then show the actual implementation itself:
         @Override
         public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
             hints.resources().registerResource(new ClassPathResource("/test.xml"));
+            hints.reflection().registerType(Album.class, MemberCategory.values());
         }
     }
 
 ```
 
-This works but theres no context, no beans. what if you want to analyze the beans? to make decisions based on the presence of annotations, interfaces, methods, etc? You need something like the `BeanFactoryPostProcessor` from earlier. Enter the `RegisteredBeanAotProcessor`.
+This works but there's no context, no beans. what if you want to analyze the beans? to make decisions based on the presence of annotations, interfaces, methods, etc? You need something like the `BeanFactoryPostProcessor` from earlier. Enter the `RegisteredBeanAotProcessor`.
 
 
 
