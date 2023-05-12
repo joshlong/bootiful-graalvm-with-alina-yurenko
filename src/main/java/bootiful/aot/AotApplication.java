@@ -1,4 +1,4 @@
-package com.example.basics;
+package bootiful.aot;
 
 import org.springframework.aot.generate.GenerationContext;
 import org.springframework.aot.hint.MemberCategory;
@@ -25,10 +25,10 @@ import java.time.Instant;
 @ImportRuntimeHints(Hints.class)
 @SpringBootApplication
 //@RegisterReflectionForBinding (Album.class)
-public class BasicsApplication {
+public class AotApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(BasicsApplication.class, args);
+        SpringApplication.run(AotApplication.class, args);
     }
 
 
