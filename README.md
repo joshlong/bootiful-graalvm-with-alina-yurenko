@@ -76,6 +76,11 @@ remove the Spring Boot annotations and gut the main method
 comment out the spring boot maven plugin 
 
 
+## You Are Not Expected to Understand This
+
+Dennis Ritchie: http://web.archive.org/web/20040206202840/http://cm.bell-labs.com/cm/cs/who/dmr/odd.html
+
+
 
 ## resources
 introduce some code that reads from a classpath resource:
@@ -147,7 +152,7 @@ package com.example.basics;
 public class BasicsApplication {
 
     public static void main(String[] args) throws Exception {
-        var clazz = Class.forName("com.example.basics.Album"); // does it blend??
+        var clazz = Class.forName("bootiful.aot.Album"); // does it blend??
         System.out.println("got a class? " + (clazz != null ));
         var instance = (Album) clazz.getDeclaredConstructors()[0]
                 .newInstance("Guardians of the GraalVM, Soundtrack Volume 23");
@@ -184,20 +189,16 @@ then run the Java agent like this:
 
 You'll see `.json` configuration files in `target/native-image`. Analyze the `reflect-config.json`: it worked! the `.json` for the `record Album` is there. Copy and paste it to the `META-INF` folder and then comment out the Spring Boot Maven plugin again. Rebuild the native image. 
 
-It'll work
 
-
- 
 ## reachability repo 
 
-theres a question: how did X, on the classpath, get configured. One obvious thing; the libjrary ships with the `.json` config files. H2 does. it's dope like that. 
+Lots of libraries have native configuration: https://github.com/h2database/h2database/blob/master/h2/src/main/META-INF/native-image/reflect-config.json
+
 
 what if it doesnt? then what? the [graalvm reachability repository](https://github.com/oracle/graalvm-reachability-metadata). 
 
 
 ## the new AOT engine in Spring Boot 3
-
-
 
 What happens when the code you're using in turn uses your code? that is, what happens when youre dealing with a framework and not just a library for whom a static `.json` configuration file is suitable enough? Something needs to provide the configuration, dynamicaly, based on the types on the classpath. Spring is well situated here. It has a new AOT engine. 
 
