@@ -24,6 +24,18 @@ yuo can interoperate with other languages, too! Inject an R function into a Spri
 
 https://medium.com/graalvm
 
+## new release 23.0
+graalvm.org 
+i use sdkman.io
+show 
+
+```shell
+sdk list java 
+```
+
+includes java 20! https://www.graalvm.org/release-notes/release-calendar/
+
+
 ## target RISC-V 
 
 https://medium.com/graalvm/graalvm-native-image-meets-risc-v-899be38eddd9

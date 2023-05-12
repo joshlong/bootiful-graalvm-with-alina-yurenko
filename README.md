@@ -192,8 +192,7 @@ You'll see `.json` configuration files in `target/native-image`. Analyze the `re
 
 ## reachability repo 
 
-Lots of libraries have native configuration: https://github.com/h2database/h2database/blob/master/h2/src/main/META-INF/native-image/reflect-config.json
-
+Lots of libraries have native configuration https://www.graalvm.org/native-image/libraries-and-frameworks/ (here's h2 for a specific example https://github.com/h2database/h2database/blob/master/h2/src/main/META-INF/native-image/reflect-config.json)
 
 what if it doesnt? then what? the [graalvm reachability repository](https://github.com/oracle/graalvm-reachability-metadata). 
 
@@ -211,11 +210,7 @@ we have seen that the AOT engine generates `.json` config files and even `.java`
 @RegisterReflectionForBinding( Album.class)
 ```
 
-
-
 ## Hints, a bit more control 
-
-
 
 What about the resource example from earlier?  Reintroduce the `test.xml` scenario as an `ApplicationRunner`. It'll run fine on the JVM, but fail as we've deleted the `resource-config.json`. We could add it back, but it's also possible to use the Spring AOT component model. 
 
@@ -264,12 +259,6 @@ After Spring Boot 3:
 `BeanPostProcessor` => beans
 
 
-### a quick background thread on the `BeanFactory`
-
-spring doesn't care where you source the configuration from: it could come from `@Configuration`, component-scanning (`@Service`, `@Controller` , etc), XML, functional config, etc. 
-
-spring has a lifecycle 
-
 beans first exist in a primordial soup of `BeanDefinitions`
 
 you can interact with beans at this granularity early on in the application context lifecycle as the application starts up (NOT new). 
@@ -299,7 +288,11 @@ What if we had access to this information even earlier, at compile time? that's 
 See for example the `target/spring-aot/main/sources/com/example/basics/BasicsApplication__BeanFactoryRegistrations.java`. 
 
 
-### a quick background thread on functional configuration 
+### the new AOT lifecycle phases are a great chance to transform the code
+
+Enter functional config 
+
+you know about some of the options like `@Configuration`, `@Controller`, etc. You can also use functional configuration. Its dope. and fast. and reflection-free. looks like this:
 
 ```java
 var context  = new SpringApplicationBuilder()
@@ -310,18 +303,54 @@ var context  = new SpringApplicationBuilder()
         .run(args);
 ```
 
-wouldn't it be nice if we could automatically derive functional bean definitions from reflection-heavy Java `@Configuration` style bean definnitions? We can thanks to Spring Boot 3s new AOT engine, which extends the bean graph to compile time. We do that for you, already! And were able to do this because of AOT processor beans that get run at compile time. 
+its kinda ugly, but it is more efficient and uses less memory. 
 
-## 
-
-This works but there's no context, no beans. what if you want to analyze the beans? to make decisions based on the presence of annotations, interfaces, methods, etc? You need something like the `BeanFactoryPostProcessor` from earlier. Enter the `BeanRegistrationAotProcessor`.
+In kotlin its super nice: 
 
 
-this lets you work with indifivudsal beans in the context. if you prefer to analyze all or many of the beans in the AC theres a BeanFactorynitializationAotProcessor, too. 
+```
+val context = beans {
 
-One of the things thats importatn to higlight here is that these are just Spring components and can live in Java configuraiton classes that are packed up on the classpath. So, imagine you have a library for your organization that does dynamic things and needs to furnish GraalVM configuration, somebody would just need to addd  your library containing these AOT components and it'lll automatically get invoked and involved when there's a graalvm native image compilation. Users wouldn't even need to know about the extra support, if any, required for the graalvm compilation to work.
+     bean {
+        ApplicationRunner { 
+         println( "hello functional Kotlin Spring!")
+        }
+     }
+}
+addInitializer (context)
+```
 
-YOU. ARE. NOT. EXPECTED. TO. UNDERSTAND. THIS.
+Wouldn't it be nice if we could automatically derive functional bean definitions from reflection-heavy Java `@Configuration` style bean definitions? 
+
+Did you know you can [run this stuff on the jvm?](https://github.com/spring-tips/spring-boot-3-aot#run-the-aot-code-on-the-jre)
+
+Show the generated functional style configuration that's done automatically for you!
+
+
+## Writing AOT Processors 
+
+what if you want to make decisions based on the presence of annotations, interfaces, methods, etc? You need something like the `BeanFactoryPostProcessor` from earlier. Enter the `BeanFactoryInitializationAotProcessor`. 
+
+Show a simple `BeanFactoryInitializationAotProcessor`
+
+```java
+class BRAPForJson implements BeanRegistrationAotProcessor {
+
+    @Override
+    public BeanRegistrationAotContribution processAheadOfTime(RegisteredBean registeredBean) {
+        var clzz = registeredBean.getBeanClass();
+        if (Serializable.class.isAssignableFrom(clzz)) {
+            return (context, beanRegistrationCode) -> {
+                var hints = context.getRuntimeHints();
+                hints.serialization().registerType(TypeReference.of(clzz.getName()));
+            };
+        }
+        return null;
+    }
+}
+```
+
+
 
 
 ## Code Generation with Java
@@ -379,7 +408,8 @@ class SimpleServiceAotProcessor implements BeanRegistrationAotProcessor {
         };
     }
 
-}```
+}
+```
 
 
 
