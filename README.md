@@ -169,7 +169,7 @@ Configure it thusly:
     <artifactId>spring-boot-maven-plugin</artifactId>
     <configuration>
         <jvmArguments>
-            -agentlib:native-image-agent=config-output-dir=src/main/resources/META-INF/native-image/group/artifact
+            -agentlib:native-image-agent=config-output-dir=src/main/resources/META-INF/native-image/${project.groupId}/${project.artifactId}
         </jvmArguments>
     </configuration>
 </plugin>
