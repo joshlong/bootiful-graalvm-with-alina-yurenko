@@ -19,8 +19,41 @@
 ## everything works! except... when it doesn't. back to basics
  - beans 
  - configuration formats (XML, java config, component scanning, etc)
+ - you know about some of the options like `@Configuration`, `@Controller`, etc. You can also use functional configuration. Its dope. and fast. and reflection-free. looks like this:
+
+```java
+var context  = new SpringApplicationBuilder()
+        .sources(BasicsApplication.class)
+        .main(BasicsApplication.class)
+        .initializers((ApplicationContextInitializer<GenericApplicationContext>) ac ->
+                ac.registerBean(ApplicationRunner.class, () -> args1 -> System.out.println("hello functional Spring!")))
+        .run(args);
+```
+
+
+
+its kinda ugly, but it is more efficient and uses less memory. 
+
+In kotlin its super nice: 
+
+
+```
+val context = beans {
+
+     bean {
+        ApplicationRunner { 
+         println( "hello functional Kotlin Spring!")
+        }
+     }
+}
+addInitializer (context)
+```
+
+
+
  - bean post processors 
  - bean factory post processor
+ - the important thing to remember is that there's a compile time lifecycle.
 
 so what are some of the common things that might break? 
 
@@ -69,7 +102,7 @@ this wont work! we need to add a config file to help graalvm account for this fu
 Run the compile: 
 
 ```shell
-./mvnw  clean native:compile -Pnative    && ./target/basics 
+./mvnw  clean native:compile -Pnative && ./target/basics 
 ```
 
 It works! let's turn to reflection. 
@@ -124,16 +157,6 @@ then run the Java agent like this:
 
 You'll see `.json` configuration files in `target/native-image`. Analyze the `reflect-config.json`: it worked! the `.json` for the `record Album` is there. Copy and paste it to the `META-INF` folder and then comment out the Spring Boot Maven plugin again. Rebuild the native image. 
 
-We could write the `.json` file by hand, or you could have spring do it for you: 
-
-```java
-@RegisterReflectionForBinding( Album.class)
-```
-
-how does this java code end up contributing to the compile time configuration? that's the aot engine, and we'll get to it next. 
-
-
-
 
 
 ## the new AOT engine in Spring Boot 3
@@ -141,8 +164,15 @@ how does this java code end up contributing to the compile time configuration? t
 What happens when the code you're using in turn uses your code? that is, what happens when youre dealing with a framework and not just a library for whom a static `.json` configuration file is suitable enough? Something needs to provide the configuration, dynamicaly, based on the types on the classpath. Spring is well situated here. It has a new AOT engine. 
 
 
+## a special case for reflection 
 
+We could write the `.json` file by hand, or you could have spring do it for you: 
 
+```java
+@RegisterReflectionForBinding( Album.class)
+```
+
+how does this java code end up contributing to the compile time configuration? that's the aot engine, and we'll get to it next. 
 
 ## Hints, a bit more control 
 
@@ -334,93 +364,14 @@ public class WorkApplication {
 
 ```
 
-
-
-
+proxies are _not_ a common thing. definitely a framework-y kinda thing. you'renot expected to understand this. (show cartoon).
 
 ## lets talk about beans 
 
-### a quick tangent on the lifecycle of a Spring application and its beans 
-
-
-Before Spring Boot 3:
-
-**RUNTIME**
-`BeanFactoryPostProcessor` => `BeanDefinition`s
-`BeanPostProcessor` => beans 
-
-After Spring Boot 3:
-
-**COMPILE**
-
-`BeanFactoryInitializationAotProcessor` => `.json`, or `.java` code
-`BeanRegistrationAotProcessor` => `.json`, or `.java`
-
-**RUNTIME**
-`BeanFactoryPostProcessor` => `BeanDefinition`s
-`BeanPostProcessor` => beans
-
-
-beans first exist in a primordial soup of `BeanDefinitions`
-
-you can interact with beans at this granularity early on in the application context lifecycle as the application starts up (NOT new). 
-
-```java
-class MyBeanFactoryBeanPostProcessor implements BeanFactoryPostProcessor {
-
-    @Override
-    public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
-        for (var beanName : beanFactory.getBeanDefinitionNames()) {
-            System.out.println("there is a bean called ['" + beanName + "']");
-            var beanDefinition = beanFactory.getBeanDefinition(beanName);
-            System.out.println("\tthe bean class name is " + beanDefinition.getBeanClassName());
-        }
-    }
-}
-
-```
-
-
-Notice the great pains we went to avoid doing anything to eagerly initialize the beans; it's too early! 
-
-But, even at this early stage we have enough information to understand how the objects are wired together. And we can use that information to analyze the state of the application context. 
-
-What if we had access to this information even earlier, at compile time? that's the core conceit of the new Spring Framework 6 AOT (ahead-of-time) engine. We don't get live-fire objects, just `BeanDefinition`s, but it's enough. We can inspect the `BeanDefinition`s and then do code-generation to write out the state of the context. 
-
-See for example the `target/spring-aot/main/sources/com/example/basics/BasicsApplication__BeanFactoryRegistrations.java`. 
 
 
 ### the new AOT lifecycle phases are a great chance to transform the code
 
-Enter functional config 
-
-you know about some of the options like `@Configuration`, `@Controller`, etc. You can also use functional configuration. Its dope. and fast. and reflection-free. looks like this:
-
-```java
-var context  = new SpringApplicationBuilder()
-        .sources(BasicsApplication.class)
-        .main(BasicsApplication.class)
-        .initializers((ApplicationContextInitializer<GenericApplicationContext>) ac ->
-                ac.registerBean(ApplicationRunner.class, () -> args1 -> System.out.println("hello functional Spring!")))
-        .run(args);
-```
-
-its kinda ugly, but it is more efficient and uses less memory. 
-
-In kotlin its super nice: 
-
-
-```
-val context = beans {
-
-     bean {
-        ApplicationRunner { 
-         println( "hello functional Kotlin Spring!")
-        }
-     }
-}
-addInitializer (context)
-```
 
 Wouldn't it be nice if we could automatically derive functional bean definitions from reflection-heavy Java `@Configuration` style bean definitions? 
 
@@ -512,5 +463,8 @@ class SimpleServiceAotProcessor implements BeanRegistrationAotProcessor {
 
 }
 ```
+
+
+
 
 
