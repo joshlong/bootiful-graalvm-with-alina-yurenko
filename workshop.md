@@ -169,11 +169,173 @@ And then show the actual implementation itself:
 
 ```
 
+## serialization 
+... easy demo ... 
+
+
 
 ## proxies 
 
+- jdk proxies (register hints)
 
-## serialization 
+```java
+
+    
+    package com.example.work;
+
+import org.springframework.aot.hint.RuntimeHints;
+import org.springframework.aot.hint.RuntimeHintsRegistrar;
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.config.SmartInstantiationAwareBeanPostProcessor;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ImportRuntimeHints;
+import org.springframework.stereotype.Service;
+
+import java.lang.reflect.Proxy;
+
+@ImportRuntimeHints(WorkApplication.Hints.class)
+@SpringBootApplication
+public class WorkApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(WorkApplication.class, args);
+    }
+
+    @Bean
+    ApplicationRunner runner(CustomerService customerService) {
+        return args -> customerService.addToCart("sku");
+    }
+
+    static class Hints implements RuntimeHintsRegistrar {
+
+        @Override
+        public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
+            hints.proxies().registerJdkProxy(CustomerService.class);
+        }
+    }
+
+    interface CustomerService {
+        void addToCart(String sku);
+    }
+
+    @Service
+    static class DefaultCustomerService implements CustomerService {
+        @Override
+        public void addToCart(String sku) {
+        }
+    }
+
+    @Bean
+    static LoggedBeanPostProcessor loggedBeanPostProcessor() {
+        return new LoggedBeanPostProcessor();
+    }
+
+    static class LoggedBeanPostProcessor implements
+            SmartInstantiationAwareBeanPostProcessor {
+
+        private static Object proxy(Class<?> targetClass, Object t) {
+            return Proxy.newProxyInstance(ClassLoader.getSystemClassLoader(),
+                    new Class[]{targetClass}, (target, method, args) -> {
+                        var methodName = method.getName();
+                        System.out.println("before " + methodName);
+                        var result = method.invoke(t, args);
+                        System.out.println("after " + methodName);
+                        return result;
+                    });
+        }
+
+        private static boolean matches(Class<?> clazzName) {
+            return CustomerService.class.isAssignableFrom(clazzName);
+        }
+
+        @Override
+        public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+            var beanClass = bean.getClass();
+            if (matches(beanClass)) {
+                return proxy(CustomerService.class, bean);
+            }
+            return bean;
+        }
+    }
+}
+
+
+
+
+```
+
+- spring proxies (`SmartInstantiationAwareBeanPostProcessor`)
+
+```java
+
+
+    @Bean
+    ApplicationRunner runner(CustomerService customerService) {
+        return args -> customerService.addToCart("sku");
+    }
+
+
+    @Service
+    static class CustomerService {
+
+        public void addToCart(String sku) {
+        }
+    }
+
+    @Bean
+    static LoggedBeanPostProcessor loggedBeanPostProcessor() {
+        return new LoggedBeanPostProcessor();
+    }
+
+    static class LoggedBeanPostProcessor implements
+            SmartInstantiationAwareBeanPostProcessor {
+
+        @Override
+        public Class<?> determineBeanType(Class<?> beanClass, String beanName) throws BeansException {
+            return matches(beanClass) ? proxy(null, beanClass).getProxyClass(WorkApplication.class.getClassLoader()) : beanClass;
+        }
+
+        private static ProxyFactory proxy(Object target, Class<?> targetClass) {
+            var pf = new ProxyFactory();
+            pf.setTargetClass(targetClass);
+            pf.setInterfaces(targetClass.getInterfaces());
+            pf.setProxyTargetClass(true); // <4>
+            pf.addAdvice((MethodInterceptor) invocation -> {
+                var methodName = invocation.getMethod().getName();
+                System.out.println("before " + methodName);
+                var result = invocation.getMethod().invoke(target, invocation.getArguments());
+                System.out.println("after " + methodName);
+                return result;
+            });
+            if (null != target) {
+                pf.setTarget(target);
+            }
+            return pf;
+        }
+
+        private static boolean matches(Class<?> clazzName) {
+            var test = CustomerService.class.equals(clazzName);
+            if (test) System.out.println(clazzName.getName() + " equals CustomerService? " + test);
+            return test;
+        }
+
+        @Override
+        public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+            var beanClass = bean.getClass();
+            if (matches(beanClass)) {
+                return proxy(bean, beanClass).getProxy();
+            }
+            return bean;
+        }
+    }
+
+```
+
+
+
 
 
 ## lets talk about beans 
@@ -350,52 +512,5 @@ class SimpleServiceAotProcessor implements BeanRegistrationAotProcessor {
 
 }
 ```
-
-
-
-
-<!--  -->
-# workshop 
-
-
-1 graalvm 
-2 spring 
-
-// graalvm 101 
- - truffle
- - aot 
- - limitations
- 	- no agents
- - basic compile w/ native-image  	
- - pgo and graalvm oracle 
-
-
-spring boot 
-	- service (loom, records, testcontainers) (oauth resource server)
-	- SAS (oauth idp)
-	- gateway (oauth client)
-
-
-// spring 101  
-- bean configuration
-	- functional 
-	- component scanning 
-	- xml 
-- beanDefinition
-- beanPostProcessor
-- beanFactoryPostProcessor
-
-auto configuration 
-
-
-
-oh yah, btw, it all compiles to native. what is native and what is graalvm?
-
-
-
-// compile time 
-beanRegistrationAotProcessor
-beanFactoryInitializationAotProcessor
-
 
 
