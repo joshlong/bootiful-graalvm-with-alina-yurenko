@@ -2,11 +2,12 @@
 
 
 ## graalvm 101 
- - truffle 
- - native-image 101 
- - optimized builds 
- - pgo && oracle graalvm 
- - lots of libraries have native configuration https://www.graalvm.org/native-image/libraries-and-frameworks/ (here's h2 for a specific example https://github.com/h2database/h2database/blob/master/h2/src/main/META-INF/native-image/reflect-config.json). What if it doesnt? then what? the [graalvm reachability repository](https://github.com/oracle/graalvm-reachability-metadata). 
+ - GraalVM JDK & Truffle 
+ - Native Image 101 
+ - AOT vs JIT 🚀
+ - DX, testing, optimized builds
+ - Things to know about Native Image 
+ - Lots of libraries have native configuration https://www.graalvm.org/native-image/libraries-and-frameworks/ (here's h2 for a specific example https://github.com/h2database/h2database/blob/master/h2/src/main/META-INF/native-image/reflect-config.json). What if it doesnt? then what? the [graalvm reachability repository](https://github.com/oracle/graalvm-reachability-metadata). 
  - but no seriously, tons of stuff should just work... watch
 
 ## everything works fine 
